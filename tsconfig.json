@@ -2,13 +2,25 @@
   "compilerOptions": {
     "declaration": true,
     "importHelpers": true,
-    "module": "commonjs",
-    "outDir": "dist",
-    "rootDir": "src",
+    "module": "ES2020",
+    "moduleResolution": "node",
+    "outDir": "./lib",
     "strict": true,
-    "target": "es2019"
+    "target": "es2019",
+    "allowSyntheticDefaultImports": true,
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "*": [
+        "./src/*"
+      ]
+    },
+    "typeRoots": [
+      "src/@types",
+      "node_modules/@types"
+    ]
   },
   "include": [
     "src/**/*"
-  ]
+  ],
 }
