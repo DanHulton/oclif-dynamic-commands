@@ -1,87 +1,150 @@
-import {
-  Hook,
-  Command,
-} from '@oclif/core';
+import { join } from 'node:path';
+import { Hook, Command } from '@oclif/core';
+import { glob } from 'glob';
 
-class DefCommand extends Command {
-  static id = 'def'
+const commandFolders = [
+  './wood/**/cli/commands/**/*.ts',
+  './app/**/cli/commands/**/*.ts',
+];
 
-  static summary = 'Def Command summary';
-  static description = 'Def Command description';
+/**
+ * A valid command must have an id, summary, description and run function.
+ *
+ * @param ctx - Oclif context.  Used for logging.
+ * @param potentialCommand - The command to examine.
+ *
+ * @return If the provided object is a valid oclif command.
+ */
+function isValidCommand(ctx: Hook.Context, potentialCommand: any): boolean {
+  // Cannot rely on `instanceof`, as `Command` base object from another
+  // project will not be the same as the one from this one.
+  if (Object.getPrototypeOf(potentialCommand).name === Command.name) {
+    if (! (typeof potentialCommand.id === 'string')) {
+      ctx.warn(`Command '${potentialCommand.name}' is missing static property "id".`);
+      return false;
+    }
 
-  async run() {
-    this.log('Def command output');
+    if (! (typeof potentialCommand.summary === 'string')) {
+      ctx.warn(`Command '${potentialCommand.name}' is missing static property "summary".`);
+      return false;
+    }
+
+    if (! (typeof potentialCommand.description === 'string')) {
+      ctx.warn(`Command '${potentialCommand.name}' is missing static property "description".`);
+      return false;
+    }
+
+    if (! (typeof potentialCommand.run === 'function')) {
+      ctx.warn(`Command '${potentialCommand.name}' is missing function "run".`);
+      return false;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Check all command IDs and ensure it is either a "root" command (has no topic
+ * separator), or a root command exists for it.
+ *
+ * @param ctx - Oclif context.  Used for logging.
+ * @param roots - The command roots to check against.
+ * @param ids - The command IDs to check.
+ *
+ * @return void
+ */
+function checkIdRoots(ctx: Hook.Context, roots: string[], ids: string[]): void {
+  ids.filter(id => id.includes(':'))
+  .filter(id => ! roots.includes(id.split(':')[0]))
+  .forEach(id => ctx.warn(`Could not find root command for '${id}'.`));
+
+  for (const id of ids) {
+    if (id.includes(':')) {
+      const root = id.split(':')[0];
+      if (! roots.includes(root)) {
+        ctx.warn(`Could not find root command for '${id}'.`);
+      }
+    }
   }
 }
 
-class TestCommand extends Command {
-  static id = 'def:testcommand'
+/**
+ * Load dynamic oclif commands from provided folders.
+ *
+ * @param ctx - Oclif context.  Used for logging.
+ * @param folders - The list of folders to load commands from.
+ *
+ * @return - The list of commands loaded from provided folders.
+ */
+const loadCommands = async function (ctx: Hook.Context, folders: string[]): Promise<Command.Class[]> {
+  const commands: Record<string, Command.Class> = {};
+  const foundRoots: string[] = [];
 
-  static summary = 'Test Command summary';
-  static description = 'Test Command description';
+  // Iterate through all commandFolders in order, so commands from later
+  // folders overwrite earlier ones
+  await Promise.all(folders.map(async folder => {
+    ctx.debug(`Searching for command files in '${folder}'...`);
 
-  async run() {
-    this.log('Test command output');
-  }
-}
+    // Iterate through all potential command files in folder
+    await Promise.all((await glob(folder)).map(async file => {
+      const fullFilename = join(process.cwd(), file);
+      ctx.debug(`Trying to find commands in '${fullFilename}'...`);
 
-const testCommandLoader: Command.Loadable = {
-  id: TestCommand.id,
-  summary: TestCommand.summary,
-  description: TestCommand.description,
-  hidden: TestCommand.hidden,
-  state: TestCommand.state,
-  deprecationOptions: TestCommand.deprecationOptions,
-  deprecateAliases: TestCommand.deprecateAliases,
-  usage: TestCommand.usage,
-  help: TestCommand.help,
-  aliases: TestCommand.aliases,
-  strict: TestCommand.strict,
-  args: TestCommand.args,
-  flags: TestCommand.flags,
-  examples: TestCommand.examples,
-  async load(): Promise<Command.Class> {
-    return TestCommand;
-  },
-  pluginType: 'user',
+      // Iterate through all objects in imported file
+      const imported = await import(fullFilename);
+      for (const key of Object.keys(imported)) {
+        if (isValidCommand(ctx, imported[key])) {
+          // Save valid command
+          commands[imported[key].id] = imported[key];
+
+          // If root command, save for root ID verification
+          if (! imported[key].id.includes(':')) {
+            foundRoots.push(imported[key].id);
+          }
+        }
+      }
+    }));
+  }));
+
+  checkIdRoots(ctx, foundRoots, Object.keys(commands));
+
+  return Object.values(commands);
 };
 
-const defCommandLoader: Command.Loadable = {
-  id: DefCommand.id,
-  summary: DefCommand.summary,
-  description: DefCommand.description,
-  hidden: DefCommand.hidden,
-  state: DefCommand.state,
-  deprecationOptions: DefCommand.deprecationOptions,
-  deprecateAliases: DefCommand.deprecateAliases,
-  usage: DefCommand.usage,
-  help: DefCommand.help,
-  aliases: DefCommand.aliases,
-  strict: DefCommand.strict,
-  args: DefCommand.args,
-  flags: DefCommand.flags,
-  examples: DefCommand.examples,
-  async load(): Promise<Command.Class> {
-    return DefCommand;
-  },
-  pluginType: 'user',
+const buildLoaders = async function (ctx: Hook.Context, commands: Command.Class[]): Promise<Command.Loadable[]> {
+  const loaders: Command.Loadable[] = [];
+
+  for (const command of commands) {
+    loaders.push({
+      id: command.id,
+      summary: command.summary,
+      description: command.description,
+      hidden: command.hidden,
+      state: command.state,
+      deprecationOptions: command.deprecationOptions,
+      deprecateAliases: command.deprecateAliases,
+      usage: command.usage,
+      help: command.help,
+      aliases: command.aliases,
+      strict: command.strict,
+      args: command.args,
+      flags: command.flags,
+      examples: command.examples,
+      async load(): Promise<Command.Class> {
+        return command;
+      },
+      pluginType: 'user',
+    });
+  }
+
+  return loaders;
 };
 
 const hook: Hook<'init'> = async function () {
-  const commands: Command[] = [];
-  const loaders: Command.Loadable[] = [];
-
-  // Get a list of all files matching ./(wood|app)/**/cli/commands/**/*.ts
-  // Iterate through each file
-  // Import all
-  // Iterate through all imports
-  // If command, add to list of commands/loaders
-
-  // Check commands for "child" commands without parents
-  // (split on ":", make sure full path of command is present in root/sub commands)
-  // Log.warn if any aren't set.
-
-  loaders.push(testCommandLoader, defCommandLoader);
+  const commands = await loadCommands(this, commandFolders);
+  const loaders = await buildLoaders(this, commands);
 
   (this.config as any).loadCommands({
     commands: loaders,

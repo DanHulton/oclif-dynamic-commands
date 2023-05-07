@@ -30,6 +30,7 @@
           "!": true
         }
       }
-    ]
+    ],
+    "unicorn/no-array-for-each": "off"
   }
 }
