@@ -1,11 +1,8 @@
 import { join } from 'node:path';
 import { Hook, Command } from '@oclif/core';
 import { glob } from 'glob';
-
-const commandFolders = [
-  './wood/**/cli/commands/**/*.ts',
-  './app/**/cli/commands/**/*.ts',
-];
+import { readJsonSync } from 'fs-extra';
+import get from 'lodash/get';
 
 /**
  * A valid command must have an id, summary, description and run function.
@@ -56,18 +53,11 @@ function isValidCommand(ctx: Hook.Context, potentialCommand: any): boolean {
  * @return void
  */
 function checkIdRoots(ctx: Hook.Context, roots: string[], ids: string[]): void {
-  ids.filter(id => id.includes(':'))
-  .filter(id => ! roots.includes(id.split(':')[0]))
-  .forEach(id => ctx.warn(`Could not find root command for '${id}'.`));
+  const topicSeparator = get(ctx.config.pjson, 'oclif.topicSeparator', ':');
 
-  for (const id of ids) {
-    if (id.includes(':')) {
-      const root = id.split(':')[0];
-      if (! roots.includes(root)) {
-        ctx.warn(`Could not find root command for '${id}'.`);
-      }
-    }
-  }
+  ids.filter(id => id.includes(topicSeparator))
+  .filter(id => ! roots.includes(id.split(topicSeparator)[0]))
+  .forEach(id => ctx.warn(`Could not find root command for '${id}'.`));
 }
 
 /**
@@ -79,6 +69,7 @@ function checkIdRoots(ctx: Hook.Context, roots: string[], ids: string[]): void {
  * @return - The list of commands loaded from provided folders.
  */
 const loadCommands = async function (ctx: Hook.Context, folders: string[]): Promise<Command.Class[]> {
+  const topicSeparator = get(ctx.config.pjson, 'oclif.topicSeparator', ':');
   const commands: Record<string, Command.Class> = {};
   const foundRoots: string[] = [];
 
@@ -100,7 +91,7 @@ const loadCommands = async function (ctx: Hook.Context, folders: string[]): Prom
           commands[imported[key].id] = imported[key];
 
           // If root command, save for root ID verification
-          if (! imported[key].id.includes(':')) {
+          if (! imported[key].id.includes(topicSeparator)) {
             foundRoots.push(imported[key].id);
           }
         }
@@ -143,6 +134,9 @@ const buildLoaders = async function (ctx: Hook.Context, commands: Command.Class[
 };
 
 const hook: Hook<'init'> = async function () {
+  const packageJson = readJsonSync(join(process.cwd(), './package.json'));
+  const commandFolders = get(packageJson, 'oclif.dynamic-commands.folders', []);
+
   const commands = await loadCommands(this, commandFolders);
   const loaders = await buildLoaders(this, commands);
 
@@ -150,8 +144,6 @@ const hook: Hook<'init'> = async function () {
     commands: loaders,
     topics: [],
   });
-
-  // Afterwards, move `dev` to project
 };
 
 export default hook;
