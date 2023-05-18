@@ -94,3 +94,8 @@ With the above shell file, the `tsconfig.json` of the _current working directory
 This raises an interesting question: How do you have combine a `paths` setting from your project's `tsconfig.json` with one from your CLI?  The short answer is that you _cannot._  So if you expect your dynamic commands to rely on custom `paths`, you cannot rely on them in your CLI.
 
 You likely also want to both a) try to rely on as few custom TsConfig settings as you can and b) inform any developers of dynamic commands not to significantly modify their TsConfig settings or they could encounter unexpected failures when running the CLI.
+
+## Changelog
+
+1.0.0 - Initial release.
+1.0.1 - More-reliable method of determining if an exported value is a Command; adds license file.

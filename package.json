@@ -1,6 +1,6 @@
 {
   "name": "oclif-dynamic-commands",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "oclif plugin that loads commands dynamically from a directory.",
   "author": "Dan Hulton @DanHulton",
   "homepage": "https://github.com/DanHulton/oclif-dynamic-commands",

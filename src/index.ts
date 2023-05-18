@@ -5,6 +5,35 @@ import { readJsonSync } from 'fs-extra';
 import get from 'lodash/get';
 
 /**
+ * Identify if a potential command is an oclif Command.
+ *
+ * Cannot rely on `instanceof`, as `Command` base object from another
+ * project will not be the same as the one from this one.
+ *
+ * @param potentialCommand - The potential command to check.
+ *
+ * @return If the object is an oclif Command.
+ */
+function isCommand(potentialCommand: any): boolean {
+  let obj = potentialCommand;
+  let objName = obj.name;
+  let recurseCount = 99;
+
+  while (recurseCount > 0 && obj !== null) {
+    objName = obj.name;
+
+    if (objName === Command.name) {
+      return true;
+    }
+
+    recurseCount++;
+    obj = Object.getPrototypeOf(obj);
+  }
+
+  return false;
+}
+
+/**
  * A valid command must have an id, summary, description and run function.
  *
  * @param ctx - Oclif context.  Used for logging.
@@ -13,9 +42,7 @@ import get from 'lodash/get';
  * @return If the provided object is a valid oclif command.
  */
 function isValidCommand(ctx: Hook.Context, potentialCommand: any): boolean {
-  // Cannot rely on `instanceof`, as `Command` base object from another
-  // project will not be the same as the one from this one.
-  if (Object.getPrototypeOf(potentialCommand).name === Command.name) {
+  if (isCommand(potentialCommand)) {
     if (! (typeof potentialCommand.id === 'string')) {
       ctx.warn(`Command '${potentialCommand.name}' is missing static property "id".`);
       return false;
