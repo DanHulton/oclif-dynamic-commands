@@ -46,26 +46,38 @@ export default class Example extends Command {
 }
 ```
 
-If your command is a sub-command (it contains the topic separator in it, e.g. `drive:inacar`), you must ensure the "root command" (`drive`) is defined somewhere in your built-in or dynamic commands, or you will not be able to see it in the help menu or list of available commands.  Users will still be able to run the command, but its discoverability will suffer.
-
 ## Configuration
 
 In the folder that is to container your dynamic commands, ensure the `package.json` file has the following setting:
 
 ```json
-  "oclif": {
-    "dynamic-commands": {
-      "folders": [
-        "./lib/commands/**/*.ts",
-        "./src/commands/**/*.ts"
-      ]
-    }
+"oclif": {
+  "dynamic-commands": {
+    "folders": [
+      "./lib/commands/**/*.ts",
+      "./src/commands/**/*.ts"
+    ]
   }
+}
 ```
 
 Folders will be explored in the order defined, and any new commands loaded will overwrite any existing commands with the same ID.  In this way, you can allow for dynamic commands to override built-in commands, or allow for commands to be loaded from a common library, but still have project-specific commands overwrite them.  
 
 Entries in the `folders` array can use glob patterns from [glob](https://www.npmjs.com/package/glob).
+
+If you have commands separated into [topics](https://oclif.io/docs/topics), you can set topic descriptions here as well:
+
+```json
+"oclif": {
+  "topics": {
+    "your-dynamic-command-topic-name": {
+      "description": "The description for your topic."
+    }
+  }
+}
+```
+
+These topics and their descriptions will appear in the TOPICS section of your command help.
 
 ## Caveats & Cautions
 
@@ -99,3 +111,4 @@ You likely also want to both a) try to rely on as few custom TsConfig settings a
 
 1.0.0 - Initial release.
 1.0.1 - More-reliable method of determining if an exported value is a Command; adds license file.
+1.1.0 - Commands in topics properly have their topic added to the command help, and "root commands" (commands with no topic separator) are no longer required to get your commands in topics to show up in the command help.

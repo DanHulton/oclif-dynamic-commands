@@ -3,6 +3,8 @@ import { Hook, Command } from '@oclif/core';
 import { glob } from 'glob';
 import { readJsonSync } from 'fs-extra';
 import get from 'lodash/get';
+import { uniq } from 'lodash';
+import { Topic } from '@oclif/core/lib/interfaces';
 
 /**
  * Identify if a potential command is an oclif Command.
@@ -70,35 +72,23 @@ function isValidCommand(ctx: Hook.Context, potentialCommand: any): boolean {
 }
 
 /**
- * Check all command IDs and ensure it is either a "root" command (has no topic
- * separator), or a root command exists for it.
- *
- * @param ctx - Oclif context.  Used for logging.
- * @param roots - The command roots to check against.
- * @param ids - The command IDs to check.
- *
- * @return void
- */
-function checkIdRoots(ctx: Hook.Context, roots: string[], ids: string[]): void {
-  const topicSeparator = get(ctx.config.pjson, 'oclif.topicSeparator', ':');
-
-  ids.filter(id => id.includes(topicSeparator))
-  .filter(id => ! roots.includes(id.split(topicSeparator)[0]))
-  .forEach(id => ctx.warn(`Could not find root command for '${id}'.`));
-}
-
-/**
  * Load dynamic oclif commands from provided folders.
  *
  * @param ctx - Oclif context.  Used for logging.
  * @param folders - The list of folders to load commands from.
  *
- * @return - The list of commands loaded from provided folders.
+ * @return - The commands and topics loaded from provided folders.
  */
-const loadCommands = async function (ctx: Hook.Context, folders: string[]): Promise<Command.Class[]> {
+const loadCommands = async function (
+  ctx: Hook.Context,
+  folders: string[],
+): Promise<{
+  commands: Command.Loadable[],
+  topics: Topic[]
+}> {
   const topicSeparator = get(ctx.config.pjson, 'oclif.topicSeparator', ':');
-  const commands: Record<string, Command.Class> = {};
-  const foundRoots: string[] = [];
+  const commands: Record<string, Command.Loadable> = {};
+  const topicNames: string[] = [];
 
   // Iterate through all commandFolders in order, so commands from later
   // folders overwrite earlier ones
@@ -115,62 +105,89 @@ const loadCommands = async function (ctx: Hook.Context, folders: string[]): Prom
       for (const key of Object.keys(imported)) {
         if (isValidCommand(ctx, imported[key])) {
           // Save valid command
-          commands[imported[key].id] = imported[key];
+          commands[imported[key].id] = buildCommandLoader(imported[key]);
 
-          // If root command, save for root ID verification
-          if (! imported[key].id.includes(topicSeparator)) {
-            foundRoots.push(imported[key].id);
+          // Save topic name
+          if (imported[key].id.includes(topicSeparator)) {
+            topicNames.push(imported[key].id.split(topicSeparator)[0]);
           }
         }
       }
     }));
   }));
 
-  checkIdRoots(ctx, foundRoots, Object.keys(commands));
-
-  return Object.values(commands);
+  return {
+    commands: Object.values(commands),
+    topics: buildTopics(uniq(topicNames)),
+  };
 };
 
-const buildLoaders = async function (ctx: Hook.Context, commands: Command.Class[]): Promise<Command.Loadable[]> {
-  const loaders: Command.Loadable[] = [];
+/**
+ * Build a Command Loader from a Command.
+ *
+ * @param command - The command to build the loader from.
+ *
+ * @return The Command Loader.
+ */
+const buildCommandLoader = function (command: Command.Class): Command.Loadable {
+  return {
+    id: command.id,
+    summary: command.summary,
+    description: command.description,
+    hidden: command.hidden,
+    state: command.state,
+    deprecationOptions: command.deprecationOptions,
+    deprecateAliases: command.deprecateAliases,
+    usage: command.usage,
+    help: command.help,
+    aliases: command.aliases,
+    strict: command.strict,
+    args: command.args,
+    flags: command.flags,
+    examples: command.examples,
+    async load(): Promise<Command.Class> {
+      return command;
+    },
+    pluginType: 'user',
+  };
+};
 
-  for (const command of commands) {
-    loaders.push({
-      id: command.id,
-      summary: command.summary,
-      description: command.description,
-      hidden: command.hidden,
-      state: command.state,
-      deprecationOptions: command.deprecationOptions,
-      deprecateAliases: command.deprecateAliases,
-      usage: command.usage,
-      help: command.help,
-      aliases: command.aliases,
-      strict: command.strict,
-      args: command.args,
-      flags: command.flags,
-      examples: command.examples,
-      async load(): Promise<Command.Class> {
-        return command;
-      },
-      pluginType: 'user',
+/**
+ * Build a list of Topics from topic names.
+ * Include description from package.json, if one is set.
+ *
+ * @param names - The names of the Topics to build.
+ *
+ * @return The Topics.
+ */
+const buildTopics = function (names: string[]): Topic[] {
+  const packageJson = readJsonSync(join(process.cwd(), './package.json'));
+
+  const topics: Topic[] = [];
+
+  for (const name of names) {
+    topics.push({
+      name,
+      description: get(packageJson, `oclif.topics.${name}.description`, ''),
     });
   }
 
-  return loaders;
+  return topics;
 };
 
+/**
+ * Run the hook.
+ *
+ * @return void
+ */
 const hook: Hook<'init'> = async function () {
   const packageJson = readJsonSync(join(process.cwd(), './package.json'));
   const commandFolders = get(packageJson, 'oclif.dynamic-commands.folders', []);
 
-  const commands = await loadCommands(this, commandFolders);
-  const loaders = await buildLoaders(this, commands);
+  const { commands, topics } = await loadCommands(this, commandFolders);
 
-  (this.config as any).loadCommands({
-    commands: loaders,
-    topics: [],
-  });
+  (this.config as any).loadCommands({ commands, topics });
+  (this.config as any).loadTopics({ commands, topics });
 };
 
 export default hook;
